@@ -31,7 +31,6 @@ class TelegramBot {
 			disable_notification: options.disable_notification,
 			reply_to_message_id: options.reply_to_message_id,
 			reply_markup: options.reply_markup,
-			link_preview_options: options.link_preview_options,
 		});
 	}
 
@@ -153,32 +152,7 @@ async function handleMessage(message, bot, env) {
         }
 
 		if (command === '/start') {
-            const buttons = [
-                [{ text: 'Update Channel', url: 'https://t.me/Blaze_Updatez' }]
-            ];
-
-			await bot.sendMessage(chatId,
-				  '<blockquote expandable><b>Hello! I am 🔥 Blaze thumbnail/cover changer bot. Send me a video to get started.</b>\n\n' +
-				    'Commands:\n' +
-				    '/save_cover [name] — Reply to an image to save it. If no name is given, it saves as your default.\n' +
-				    '/covers — Manage your saved covers.\n' +
-				    '/stats — View your usage statistics.' +
-				  '</blockquote>',
-				  {
-				    parse_mode: 'HTML',
-				    link_preview_options: {
-				      is_disabled: false,
-				      url: 'https://iili.io/K2LIM79.md.jpg',
-				      prefer_small_media: false,
-				      prefer_large_media: true,
-				      show_above_text: true
-				    },
-				    reply_markup: {
-				      inline_keyboard: buttons
-				    }
-				  }
-				);
-
+			await bot.sendMessage(chatId, 'Hello! Send me a video to get started.\n\n**Commands:**\n`/save_cover [name]` - Reply to an image to save it. If no name is given, it saves as your default.\n`/covers` - Manage your saved covers.\n`/stats` - View your usage statistics.', { parse_mode: 'Markdown' });
 		} else if (command === '/save_cover' && message.reply_to_message && message.reply_to_message.photo) {
 			const name = args[0] || DEFAULT_COVER_NAME;
 			const photo = message.reply_to_message.photo;
