@@ -1,0 +1,22 @@
+{
+    "$schema": "node_modules/wrangler/config-schema.json",
+    "name": "thumbbot",
+    "main": "src/index.js",
+    "compatibility_date": "2025-08-26",
+    "compatibility_flags": [
+        "nodejs_compat",
+        "global_fetch_strictly_public"
+    ],
+    "assets": {
+        "directory": "./public"
+    },
+    "observability": {
+        "enabled": true
+    },
+    "kv_namespaces": [
+        {
+            "binding": "COVERS_KV",
+            "id": "5c082c675d0c4e52b478ef1676c14338"
+        }
+    ]
+}
