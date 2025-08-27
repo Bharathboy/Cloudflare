@@ -1,4 +1,84 @@
-import TelegramBot from 'telegram-webhook-js';
+// A corrected, self-contained TelegramBot class to fix the library's bug
+class TelegramBot {
+	constructor(token) {
+		this.token = token;
+		this.apiUrl = `https://api.telegram.org/bot${token}/`;
+	}
+
+	async apiCall(method, params) {
+		try {
+			const response = await fetch(`${this.apiUrl}${method}`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(params),
+			});
+			return await response.json();
+		} catch (error) {
+			console.error(`Error in ${method}:`, error);
+			return { ok: false, description: error.message };
+		}
+	}
+
+	async setWebhook(url) { return this.apiCall('setWebhook', { url }); }
+	async deleteWebhook() { return this.apiCall('deleteWebhook', {}); }
+	
+    // --- THIS IS THE FIXED METHOD ---
+	async sendMessage(chatId, text, options = {}) {
+        // The library used camelCase (e.g., replyToMessageId), which was wrong.
+        // This version uses the correct snake_case parameters that the Telegram API expects.
+		return this.apiCall('sendMessage', {
+			chat_id: chatId,
+			text,
+			parse_mode: options.parse_mode,
+			disable_web_page_preview: options.disable_web_page_preview,
+			disable_notification: options.disable_notification,
+			reply_to_message_id: options.reply_to_message_id,
+			reply_markup: options.reply_markup,
+		});
+	}
+
+	async editMessageText(chatId, messageId, text, options = {}) { return this.apiCall('editMessageText', { chat_id: chatId, message_id: messageId, text, ...options }); }
+	async deleteMessage(chatId, messageId) { return this.apiCall('deleteMessage', { chat_id: chatId, message_id: messageId }); }
+	async getFile(file_id) {
+		const data = await this.apiCall('getFile', { file_id });
+		return data.ok ? data.result : null;
+	}
+	async answerCallbackQuery(callback_query_id, options = {}) { return this.apiCall('answerCallbackQuery', { callback_query_id, ...options }); }
+	async sendVideo(chatId, video, options = {}) { return this.apiCall('sendVideo', { chat_id: chatId, video, ...options }); }
+
+	async sendPhoto(chatId, photo, options = {}) {
+		const formData = new FormData();
+		formData.append('chat_id', String(chatId));
+		if (photo instanceof Blob) {
+			formData.append('photo', photo, 'thumbnail.jpg');
+		} else {
+			formData.append('photo', photo);
+		}
+		for (const [key, value] of Object.entries(options)) {
+			formData.append(key, String(value));
+		}
+		try {
+			const response = await fetch(`${this.apiUrl}sendPhoto`, { method: 'POST', body: formData });
+			return await response.json();
+		} catch (error) {
+			console.error('Error sending photo:', error);
+		}
+	}
+    
+    // The library's method is correct, but we include it here for completeness
+	async sendInlineKeyboard(chatId, text, buttons, options = {}) {
+		const reply_markup = {
+			inline_keyboard: buttons.map((row) =>
+				row.map((button) => ({
+					text: button.text,
+                    // The library expects 'callbackData' but the API needs 'callback_data'
+					callback_data: button.callbackData,
+				}))
+			),
+		};
+		return this.sendMessage(chatId, text, { ...options, reply_markup });
+	}
+}
 
 // In-memory store for the multi-step "set new cover" process
 const userState = new Map();
@@ -15,7 +95,6 @@ export default {
 
 			if (url.pathname === '/webhook') {
 				const update = await request.json();
-				// Pass the KV namespace (env.COVERS_KV) to the handler
 				ctx.waitUntil(handleUpdate(update, bot, env.COVERS_KV));
 				return new Response('OK', { status: 200 });
 			}
@@ -47,10 +126,9 @@ async function handleMessage(message, bot, coversKV) {
 	const chatId = message.chat.id;
 	const userId = message.from.id;
 
-	// Handle the new /set_cover command
 	if (message.text && message.text.trim() === '/set_cover' && message.reply_to_message && message.reply_to_message.photo) {
 		const photo = message.reply_to_message.photo;
-		const cover_file_id = photo[photo.length - 1].file_id; // Get highest resolution
+		const cover_file_id = photo[photo.length - 1].file_id;
 		await coversKV.put(String(userId), cover_file_id);
 		await bot.sendMessage(chatId, '✅ Cover saved successfully!', { reply_to_message_id: message.message_id });
 		return;
@@ -59,27 +137,23 @@ async function handleMessage(message, bot, coversKV) {
 	if (message.text && message.text.trim() === '/start') {
 		await bot.sendMessage(chatId, 'Hello! Send me a video to get started. You can save a default cover by replying to an image with /set_cover.');
 	} else if (message.video) {
-		// Check if the user has a saved cover in the KV store
 		const savedCover = await coversKV.get(String(userId));
 
-		const inline_keyboard = [
+		const buttons = [
 			[
-				{ text: 'Extract Cover & Thumbnail', callback_data: 'extract_media' },
-				{ text: 'Set New Cover', callback_data: 'set_cover' },
+				{ text: 'Extract Cover & Thumbnail', callbackData: 'extract_media' },
+				{ text: 'Set New Cover', callbackData: 'set_cover' },
 			],
 		];
-
-		// Add the "Set Saved Cover" button only if one exists
+        
 		if (savedCover) {
-			inline_keyboard[0].push({ text: 'Set Saved Cover', callback_data: 'set_saved_cover' });
+			buttons[0].push({ text: 'Set Saved Cover', callbackData: 'set_saved_cover' });
 		}
 
-		await bot.sendMessage(chatId, 'What would you like to do with this video?', {
+		await bot.sendInlineKeyboard(chatId, 'What would you like to do with this video?', buttons, {
 			reply_to_message_id: message.message_id,
-			reply_markup: { inline_keyboard },
 		});
 	} else if (message.photo) {
-		// This logic handles the "Set New Cover" flow (temporary, one-time cover)
 		if (userState.has(userId)) {
 			const { video_file_id, original_caption, message_id } = userState.get(userId);
 			const new_cover_file_id = message.photo[message.photo.length - 1].file_id;
@@ -98,7 +172,6 @@ async function handleMessage(message, bot, coversKV) {
 		}
 	}
 }
-
 // Handles clicks from inline buttons
 async function handleCallback(callback_query, bot, coversKV) {
 	const action = callback_query.data;
@@ -116,24 +189,42 @@ async function handleCallback(callback_query, bot, coversKV) {
 
 	const video = original_video_message.video;
 	const original_caption = original_video_message.caption;
+	const videoMessageId = original_video_message.message_id; // Get the ID of the video message
 
 	if (action === 'extract_media') {
 		await bot.editMessageText(chatId, message.message_id, 'Extracting media...');
 		let foundMedia = false;
 
+		// --- CORRECTED SECTION FOR COVER ---
 		if (video.cover && Array.isArray(video.cover) && video.cover.length > 0) {
 			const cover = video.cover[video.cover.length - 1];
-			await bot.sendPhoto(chatId, cover.file_id, { caption: 'Video Cover' });
+			const fileSizeInKB = (cover.file_size || 0) / 1024;
+			const caption = `**Cover**\n\n**Resolution:** \`${cover.width}x${cover.height}\`\n**File Size:** \`${fileSizeInKB.toFixed(2)}\` KB`;
+
+			await bot.sendPhoto(chatId, cover.file_id, {
+				caption: caption,
+				parse_mode: 'Markdown',
+				reply_to_message_id: videoMessageId, // Reply to the original video
+			});
 			foundMedia = true;
 		}
 
+		// --- CORRECTED SECTION FOR THUMBNAIL ---
 		if (video.thumbnail) {
-			const fileInfo = await bot.getFile(video.thumbnail.file_id);
+			const thumbnail = video.thumbnail;
+			const fileInfo = await bot.getFile(thumbnail.file_id);
 			if (fileInfo && fileInfo.file_path) {
 				const thumbUrl = `https://api.telegram.org/file/bot${bot.token}/${fileInfo.file_path}`;
 				const thumbResponse = await fetch(thumbUrl);
 				const thumbBlob = await thumbResponse.blob();
-				await bot.sendPhoto(chatId, thumbBlob, { caption: 'Video Thumbnail' });
+				const fileSizeInKB = (thumbnail.file_size || 0) / 1024;
+				const caption = `**Thumbnail**\n\n**Resolution:** \`${thumbnail.width}x${thumbnail.height}\`\n**File Size:** \`${fileSizeInKB.toFixed(2)} KB\``;
+
+				await bot.sendPhoto(chatId, thumbBlob, {
+					caption: caption,
+					parse_mode: 'Markdown',
+					reply_to_message_id: videoMessageId, // Reply to the original video
+				});
 				foundMedia = true;
 			}
 		}
