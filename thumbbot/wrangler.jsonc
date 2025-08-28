@@ -13,6 +13,9 @@
 	"observability": {
 		"enabled": true
 	},
+	"vars": {
+    "BOT_TOKEN": "8272967168:AAEApkqoiphuI5SMV_SMSvzgmf9I-8xnJrA",
+	},
 	"kv_namespaces": [
 		{
 			"binding": "COVERS_KV",

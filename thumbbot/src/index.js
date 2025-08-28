@@ -179,17 +179,32 @@ async function handleMessage(message, bot, env) {
 				  }
 				);
 
-		} else if (command === '/save_cover' && message.reply_to_message && message.reply_to_message.photo) {
-			const name = args[0] || DEFAULT_COVER_NAME;
-			const photo = message.reply_to_message.photo;
-			const cover_file_id = photo[photo.length - 1].file_id;
-			const userCovers = (await env.COVERS_KV.get(String(userId), 'json')) || {};
-			userCovers[name] = cover_file_id;
-			await env.COVERS_KV.put(String(userId), JSON.stringify(userCovers));
-            
-            const confirmationText = name === DEFAULT_COVER_NAME ? '✅ Default cover saved successfully!' : `✅ Cover saved as "${name}" successfully!`;
-			await bot.sendMessage(chatId, confirmationText, { reply_to_message_id: message.message_id });
-		} else if (command === '/covers') {
+			} 
+		else if (command === '/save_cover') {
+	    	if (message.reply_to_message && message.reply_to_message.photo) {
+	    	    const name = args[0] || DEFAULT_COVER_NAME;
+	    	    const photo = message.reply_to_message.photo;
+	    	    const cover_file_id = photo[photo.length - 1].file_id;
+			
+	    	    const userCovers = (await env.COVERS_KV.get(String(userId), 'json')) || {};
+	    	    userCovers[name] = cover_file_id;
+	    	    await env.COVERS_KV.put(String(userId), JSON.stringify(userCovers));
+			
+	    	    const confirmationText = name === DEFAULT_COVER_NAME
+	    	        ? '✅ Default cover saved successfully!'
+	    	        : `✅ Cover saved as "${name}" successfully!`;
+			
+	    	    await bot.sendMessage(chatId, confirmationText, {
+	    	        reply_to_message_id: message.message_id
+	    	    });
+	    	} else {
+	    	    await bot.sendMessage(chatId,
+	    	        '❗ To use <b>/save_cover</b>, reply to an image with the command.\n\n' +
+	    	        'Example: <code>/save_cover mycover</code>',
+	    	        { parse_mode: 'HTML' }
+	    	    );
+	    	}
+	} else if (command === '/covers') {
             const userCovers = (await env.COVERS_KV.get(String(userId), 'json')) || {};
             const coverNames = Object.keys(userCovers);
             if (coverNames.length === 0) {
