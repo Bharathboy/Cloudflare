@@ -1,3 +1,5 @@
+// src/index.js
+
 // A corrected, self-contained TelegramBot class to fix all library bugs
 class TelegramBot {
 	constructor(token) {
@@ -95,8 +97,9 @@ const DEFAULT_COVER_NAME = '__default__';
 export default {
 	async fetch(request, env, ctx) {
 		try {
-			if (!env.BOT_TOKEN || !env.COVERS_KV || !env.STATS_KV) {
-				return new Response('Required environment variables (BOT_TOKEN, COVERS_KV, STATS_KV) are not set', { status: 500 });
+			// --- MODIFICATION: Added USER_STORE to the check ---
+			if (!env.BOT_TOKEN || !env.COVERS_KV || !env.STATS_KV || !env.USER_STORE) {
+				return new Response('Required environment variables (BOT_TOKEN, COVERS_KV, STATS_KV, USER_STORE) are not set', { status: 500 });
 			}
 			const bot = new TelegramBot(env.BOT_TOKEN);
 			const url = new URL(request.url);
@@ -139,7 +142,6 @@ async function handleMessage(message, bot, env) {
         const command = text.split(' ')[0];
         const args = text.split(' ').slice(1);
         
-        // Check if user is in the middle of naming a cover
         if (userState.has(userId) && userState.get(userId).action === 'awaiting_cover_name') {
             const { cover_file_id, message_id } = userState.get(userId);
             const name = text;
@@ -153,10 +155,12 @@ async function handleMessage(message, bot, env) {
         }
 
 		if (command === '/start') {
+			// --- MODIFICATION: Store user ID ---
+			await env.USER_STORE.put(String(userId), "1");
+
             const buttons = [
                 [{ text: 'Update Channel', url: 'https://t.me/Blaze_Updatez' }]
             ];
-
 			await bot.sendMessage(chatId,
 				  '<blockquote expandable><b>Hello! I am 🔥 Blaze thumbnail/cover changer bot. Send me a video to get started.</b>\n\n' +
 				    'Commands:\n' +
@@ -169,7 +173,6 @@ async function handleMessage(message, bot, env) {
 				    link_preview_options: {
 				      is_disabled: false,
 				      url: 'https://iili.io/K2LIM79.md.jpg',
-				      prefer_small_media: false,
 				      prefer_large_media: true,
 				      show_above_text: true
 				    },
@@ -178,9 +181,7 @@ async function handleMessage(message, bot, env) {
 				    }
 				  }
 				);
-
-			} 
-		else if (command === '/save_cover') {
+		} else if (command === '/save_cover') {
 	    	if (message.reply_to_message && message.reply_to_message.photo) {
 	    	    const name = args[0] || DEFAULT_COVER_NAME;
 	    	    const photo = message.reply_to_message.photo;
@@ -204,14 +205,13 @@ async function handleMessage(message, bot, env) {
 	    	        { parse_mode: 'HTML' }
 	    	    );
 	    	}
-	} else if (command === '/covers') {
+	    } else if (command === '/covers') {
             const userCovers = (await env.COVERS_KV.get(String(userId), 'json')) || {};
             const coverNames = Object.keys(userCovers);
             if (coverNames.length === 0) {
                 await bot.sendMessage(chatId, "You don't have any saved covers.", { reply_to_message_id: message.message_id });
                 return;
             }
-            // Create a row of buttons for each cover
             const buttons = coverNames.map(name => ([
                 { text: `🖼️ ${name === DEFAULT_COVER_NAME ? 'Default' : name}`, callbackData: `send_cover_${name}` },
                 { text: '🗑️ Delete', callbackData: `confirm_delete_${name}` }
@@ -220,6 +220,11 @@ async function handleMessage(message, bot, env) {
         } else if (command === '/stats') {
 			const stats = (await env.STATS_KV.get(String(userId), 'json')) || { videos_processed: 0, covers_changed: 0 };
 			await bot.sendMessage(chatId, `**Your Stats:**\n- Videos Processed: ${stats.videos_processed}\n- Covers Changed: ${stats.covers_changed}`, { parse_mode: 'Markdown', reply_to_message_id: message.message_id });
+		// --- MODIFICATION: Added /usersx command ---
+		} else if (command === '/usersx') {
+			const keys = await env.USER_STORE.list();
+			const userCount = keys.keys.length;
+			await bot.sendMessage(chatId, `📊 <b>Total Unique Users:</b> ${userCount}`, { parse_mode: 'HTML' });
 		}
 	} else if (message.video) {
         const stats = (await env.STATS_KV.get(String(userId), 'json')) || { videos_processed: 0, covers_changed: 0 };
@@ -237,7 +242,6 @@ async function handleMessage(message, bot, env) {
 			reply_to_message_id: message.message_id,
 		});
 	} else if (message.photo) {
-		// This logic handles setting a one-time cover for a video
 		if (userState.has(userId) && userState.get(userId).action === 'awaiting_new_cover') {
 			const { video_file_id, original_caption, message_id } = userState.get(userId);
 			const new_cover_file_id = message.photo[message.photo.length - 1].file_id;
@@ -258,7 +262,6 @@ async function handleMessage(message, bot, env) {
 			await bot.deleteMessage(chatId, workingMsg.result.message_id);
 			userState.delete(userId);
 		} else {
-            // New logic for when a user sends a photo directly
             const buttons = [
                 [{ text: '🔗 Paste', callbackData: 'paste_image' }],
                 [{ text: '💾 Save Cover', callbackData: 'save_cover' }]
@@ -277,7 +280,6 @@ async function handleCallback(callback_query, bot, env) {
 	const chatId = message.chat.id;
 	const userId = callback_query.from.id;
 
-    // --- Logic for /covers menu (does not need a replied-to message) ---
     if (action.startsWith('send_cover_') || action.startsWith('confirm_delete_') || action.startsWith('delete_cover_') || action === 'cancel_delete') {
         if (action.startsWith('send_cover_')) {
             const coverName = action.replace('send_cover_', '');
@@ -310,11 +312,9 @@ async function handleCallback(callback_query, bot, env) {
             await bot.editMessageText(chatId, message.message_id, 'Deletion cancelled.');
             await bot.answerCallbackQuery(callback_query.id);
         }
-        return; // Stop execution here for these actions
+        return;
     }
-    // --- End of /covers logic ---
 
-    // --- Logic for Photo Actions ---
     if (action === 'paste_image' || action === 'save_cover' || action === 'save_default' || action === 'save_with_name') {
         const original_photo_message = message.reply_to_message;
         if (!original_photo_message || !original_photo_message.photo) {
@@ -333,15 +333,35 @@ async function handleCallback(callback_query, bot, env) {
                 const imageResponse = await fetch(imageUrl);
                 const blob = await imageResponse.blob();
                 
-                const formData = new FormData();
-                formData.append('file', blob, 'image.jpg');
-
-                const pasteResponse = await fetch("https://envs.sh/", { method: 'POST', body: formData });
-                if (pasteResponse.ok) {
+                // --- MODIFICATION: Added fallback pasting logic ---
+                try {
+                    // Try the first service
+                    const formData = new FormData();
+                    formData.append('file', blob, 'image.jpg');
+                    const pasteResponse = await fetch("https://envs.sh/", { method: 'POST', body: formData });
+                    if (!pasteResponse.ok) throw new Error('First paste service failed');
                     const pasteUrl = (await pasteResponse.text()).trim();
                     await bot.editMessageText(chatId, message.message_id, `Here is your link:\n${pasteUrl}`);
-                } else {
-                    await bot.editMessageText(chatId, message.message_id, 'Failed to paste the image.');
+                } catch (error) {
+                    // If first service fails, try the second one
+                    console.error("Primary paste service failed:", error);
+                    await bot.editMessageText(chatId, message.message_id, 'Primary paste service failed, trying fallback...');
+                    try {
+                        const IMGBB_UPLOAD_URL = "https://api-integretion-unblocked.vercel.app/imgbb";
+                        const formData = new FormData();
+                        const fileName = `${crypto.randomUUID()}.jpg`;
+                        formData.append("file", new Blob([await blob.arrayBuffer()], { type: "image/jpeg" }), fileName);
+                        const response = await fetch(IMGBB_UPLOAD_URL, { method: "POST", body: formData });
+                        const data = await response.json();
+                        if (data.url) {
+                            await bot.editMessageText(chatId, message.message_id, `Here is your link (from fallback):\n${data.url}`);
+                        } else {
+                            throw new Error('Fallback service returned no URL.');
+                        }
+                    } catch (fallbackError) {
+                        console.error("Fallback paste service failed:", fallbackError);
+                        await bot.editMessageText(chatId, message.message_id, 'Failed to paste the image using both primary and fallback services.');
+                    }
                 }
             }
             await bot.answerCallbackQuery(callback_query.id);
@@ -365,9 +385,7 @@ async function handleCallback(callback_query, bot, env) {
         }
         return;
     }
-    // --- End of Photo Actions ---
 
-    // --- Logic for video actions ---
 	const original_video_message = message.reply_to_message;
 	if (!original_video_message || !original_video_message.video) {
         await bot.answerCallbackQuery(callback_query.id);
@@ -387,7 +405,6 @@ async function handleCallback(callback_query, bot, env) {
         const minutes = Math.floor((durationSeconds % 3600) / 60);
         const seconds = durationSeconds % 60;
         const formattedDuration = `${hours > 0 ? `${hours} h ` : ''}${minutes > 0 ? `${minutes} min ` : ''}${seconds} s`;
-
 		const metadata = "🗒 **General**\n" +
             `**Complete name:** \`${video.file_name || 'N/A'}\`\n` +
             `**File size:** \`${fileSizeInMB.toFixed(2)} MiB\`\n` +
@@ -396,7 +413,6 @@ async function handleCallback(callback_query, bot, env) {
             `**Width:** \`${video.width} pixels\`\n` +
             `**Height:** \`${video.height} pixels\`\n` +
             `**MIME Type:** \`${video.mime_type || 'N/A'}\``;
-
 		await bot.editMessageText(chatId, message.message_id, metadata, { parse_mode: 'Markdown' });
 	} else if (action === 'extract_media') {
         await bot.answerCallbackQuery(callback_query.id);

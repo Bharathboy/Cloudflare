@@ -14,7 +14,7 @@
 		"enabled": true
 	},
 	"vars": {
-    "BOT_TOKEN": "8272967168:AAEApkqoiphuI5SMV_SMSvzgmf9I-8xnJrA",
+		"BOT_TOKEN": "8272967168:AAEApkqoiphuI5SMV_SMSvzgmf9I-8xnJrA",
 	},
 	"kv_namespaces": [
 		{
@@ -24,6 +24,10 @@
 		{
 			"binding": "STATS_KV",
 			"id": "3a7f79b99586467189dd17d92d034a94"
+		},
+		{
+			"binding": "USER_STORE",
+			"id": "a6ba5c6f1599424b88a4a38e8058a4f3"
 		}
 	]
 }
