@@ -354,7 +354,7 @@ async function handleCallback(callback_query, bot, env) {
                         const response = await fetch(IMGBB_UPLOAD_URL, { method: "POST", body: formData });
                         const data = await response.json();
                         if (data.url) {
-                            await bot.editMessageText(chatId, message.message_id, `Here is your link (from fallback):\n${data.url}`);
+                            await bot.editMessageText(chatId, message.message_id, `Here is your link:\n${data.url}`);
                         } else {
                             throw new Error('Fallback service returned no URL.');
                         }
